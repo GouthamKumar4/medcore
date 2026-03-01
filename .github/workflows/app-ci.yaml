@@ -1,0 +1,62 @@
+# ──────────────────────────────────────────────────────────────
+# APP CI — Validate application on Pull Request
+# ──────────────────────────────────────────────────────────────
+# TRIGGER: Pull request to main (src/ changes)
+# DOES:    Build → Test → Report
+# DOES NOT: Deploy anything (that's app-cd.yml)
+#
+# WHY separate from infra-ci.yml?
+#   infra-ci.yml → infrastructure changes (Terraform)
+#   app-ci.yml   → application changes (.NET code)
+#   Different triggers, different tools, different reviewers.
+# ──────────────────────────────────────────────────────────────
+
+name: "App — CI (Build + Test)"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/app-ci.yml"
+      - ".github/actions/dotnet-build/**"
+
+permissions:
+  contents: read
+  pull-requests: write     # post build results as PR comment
+
+jobs:
+  build-and-test:
+    name: "🔨 Build + Test"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build + Test
+        uses: ./.github/actions/dotnet-build
+        with:
+          project-path: src/MedCore.Api/MedCore.Api.csproj
+          publish: "false"
+
+      - name: Post build result to PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
+            const body = `### ${status} Application Build — \`${{ job.status }}\`
+            | Check | Status |
+            |-------|--------|
+            | .NET Restore | ${{ job.status == 'success' && '✅' || '❌' }} |
+            | Build (Release) | ${{ job.status == 'success' && '✅' || '❌' }} |
+            | Tests | ${{ job.status == 'success' && '✅ passed' || '❌ failed' }} |
+
+            > Commit: \`${{ github.sha }}\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
