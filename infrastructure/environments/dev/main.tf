@@ -40,7 +40,7 @@ locals {
     Application = "MedCore"
     Environment = var.environment
     ManagedBy   = "Terraform"
-    CostCenter  = "IT-001"
+    CostCenter  = "IT-002"
     Owner       = "Platform Team"
   }
 }
@@ -104,3 +104,4 @@ module "app_service" {
   app_insights_connection_string = module.monitoring.app_insights_connection_string
   tags                           = local.common_tags
 }
+
