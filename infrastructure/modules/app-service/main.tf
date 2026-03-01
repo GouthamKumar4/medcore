@@ -39,6 +39,7 @@ resource "azurerm_linux_web_app" "this" {
     minimum_tls_version = "1.2"
     always_on           = var.always_on
     health_check_path   = "/health"
+    health_check_eviction_time_in_min = 5
   }
 
   app_settings = merge(
@@ -51,7 +52,7 @@ resource "azurerm_linux_web_app" "this" {
   )
 
   dynamic "connection_string" {
-    for_each = var.sql_connection_string != "" ? ["enabled"] : []
+    for_each = toset(var.sql_connection_string != "" ? ["enabled"] : [])
     content {
       name  = "DefaultConnection"
       type  = "SQLAzure"

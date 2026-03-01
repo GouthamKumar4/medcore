@@ -19,14 +19,6 @@ resource "azurerm_key_vault" "this" {
   tags = var.tags
 }
 
-# App Service System MI → read secrets
-resource "azurerm_role_assignment" "app_secrets_reader" {
-  count                = var.app_service_principal_id != "" ? 1 : 0
-  scope                = azurerm_key_vault.this.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = var.app_service_principal_id
-}
-
 # Current user (terraform runner) → manage secrets
 resource "azurerm_role_assignment" "admin" {
   scope                = azurerm_key_vault.this.id

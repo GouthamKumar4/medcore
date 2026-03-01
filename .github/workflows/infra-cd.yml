@@ -52,6 +52,11 @@ jobs:
       ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:        "true"
+      # Terraform input variables (TF_VAR_* → auto-mapped by Terraform)
+      TF_VAR_subscription_id:     ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_sql_admin_password:  ${{ secrets.SQL_ADMIN_PASSWORD }}
+      TF_VAR_aad_admin_login:     ${{ secrets.AAD_ADMIN_LOGIN }}
+      TF_VAR_aad_admin_object_id: ${{ secrets.AAD_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -85,6 +90,11 @@ jobs:
       ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:        "true"
+      # Terraform input variables (TF_VAR_* → auto-mapped by Terraform)
+      TF_VAR_subscription_id:     ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_sql_admin_password:  ${{ secrets.SQL_ADMIN_PASSWORD }}
+      TF_VAR_aad_admin_login:     ${{ secrets.AAD_ADMIN_LOGIN }}
+      TF_VAR_aad_admin_object_id: ${{ secrets.AAD_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

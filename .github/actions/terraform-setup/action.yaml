@@ -61,6 +61,28 @@ runs:
       with:
         terraform_version: ${{ inputs.terraform-version }}
 
+    # WHY ARM_USE_AZUREAD?
+    # The azurerm backend defaults to storage account KEY auth (calls listKeys API).
+    # Our Plan MIs (Reader role) don't have listKeys permission — and we DON'T want
+    # to grant it (least privilege). Instead, we tell Terraform to use Azure AD tokens
+    # directly for blob access. This is Microsoft's recommended approach for OIDC pipelines.
+    #
+    # Without this: terraform init → listKeys → 403 "AuthorizationFailed"
+    # With this:    terraform init → Azure AD token → blob access → ✅
+    #
+    # RBAC required on storage account:
+    #   Plan MIs:   Storage Blob Data Contributor (read/write state + locking)
+    #   Deploy MIs: Storage Blob Data Contributor (read/write state + locking)
+    #
+    # WHY Contributor for Plan MIs (not Reader)?
+    #   azurerm backend calls PutBlockBlob during init/plan for state locking.
+    #   This happens INSIDE the backend Go code, BEFORE the CLI -lock flag is
+    #   evaluated. Even -lock=false doesn't prevent it. Blob Data Reader → 403.
+    #   Security is enforced by Reader role on RGs (cannot create/modify/delete resources).
+    - name: Configure Azure AD auth for Terraform state backend
+      shell: bash
+      run: echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
+
     - name: Terraform Init
       shell: bash
       working-directory: ${{ inputs.working-directory }}

@@ -31,6 +31,11 @@ provider "azurerm" {
     }
   }
   subscription_id = var.subscription_id
+
+  # Skip auto-registration — Plan MIs (Reader) and Deploy MIs (Contributor on RG)
+  # don't have subscription-level Microsoft.XXX/register/action permission.
+  # Cloud admin pre-registers needed providers. See: platform/scripts/01-cloud-admin-setup.ps1
+  resource_provider_registrations = "none"
 }
 
 data "azurerm_client_config" "current" {}
@@ -64,8 +69,15 @@ module "key_vault" {
   sql_admin_password       = var.sql_admin_password
   soft_delete_days         = 90
   purge_protection         = true
-  app_service_principal_id = module.app_service.principal_id
   tags                     = local.common_tags
+}
+
+# App Service System MI → read Key Vault secrets
+# (See dev/main.tf for detailed WHY comment)
+resource "azurerm_role_assignment" "app_kv_secrets_reader" {
+  scope                = module.key_vault.key_vault_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.app_service.principal_id
 }
 
 module "sql" {
