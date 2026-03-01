@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────
+# COMPOSITE ACTION: Terraform Plan
+# ──────────────────────────────────────────────────────────────
+# WHY this template?
+#   "terraform plan" runs in 4 jobs across 2 pipelines:
+#     CI:  plan-dev, plan-prod   (plan only, save output)
+#     CD:  deploy-dev, deploy-prod (plan + apply)
+#
+#   WITHOUT template:
+#     4 jobs × 3 lines each = 12 lines of copy-pasted plan logic
+#     Change plan flags? → Edit 4 places. Miss one = inconsistency.
+#
+#   WITH template:
+#     4 jobs × 1 line each = 4 lines
+#     Change plan flags? → Edit 1 file. All 4 jobs get the fix.
+#
+# USAGE (CI — plan only):
+#   - uses: ./.github/actions/terraform-plan
+#     with:
+#       working-directory: infrastructure/environments/dev
+#
+# USAGE (CD — plan + apply):
+#   - uses: ./.github/actions/terraform-plan
+#     with:
+#       working-directory: infrastructure/environments/dev
+#       apply: "true"
+# ──────────────────────────────────────────────────────────────
+
+name: "Terraform Plan (+ optional Apply)"
+description: "Runs terraform plan, saves output to plan.txt. Optionally applies."
+
+inputs:
+  working-directory:
+    description: "Path to the Terraform environment folder"
+    required: true
+  apply:
+    description: "Set 'true' to also run terraform apply after plan"
+    required: false
+    default: "false"
+
+outputs:
+  plan-exitcode:
+    description: "Exit code of terraform plan (0 = no changes, 2 = changes)"
+    value: ${{ steps.plan.outputs.exitcode }}
+  plan-file:
+    description: "Path to the saved plan output text file"
+    value: "${{ inputs.working-directory }}/plan.txt"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Terraform Plan
+      id: plan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan.txt
+        EXITCODE=$?
+        echo "exitcode=$EXITCODE" >> $GITHUB_OUTPUT
+        # Exit codes: 0 = no changes, 1 = error, 2 = changes pending
+        if [ $EXITCODE -eq 1 ]; then
+          exit 1
+        fi
+
+    - name: Terraform Apply
+      if: inputs.apply == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform apply -auto-approve tfplan

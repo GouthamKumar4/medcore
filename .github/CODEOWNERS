@@ -1,0 +1,56 @@
+# ────────────────────────────────────
+# CODEOWNERS — Who reviews what
+#
+# WHY: When a Pull Request changes files in a specific area,
+# GitHub automatically assigns the correct reviewer.
+# No more "who should review this?" confusion.
+#
+# HOW IT WORKS:
+#   pattern    @owner
+#   If a PR touches files matching "pattern", @owner is auto-assigned as reviewer.
+#   PR CANNOT be merged until the owner approves.
+#
+# RULES:
+#   - Last matching pattern wins (put specific patterns AFTER general ones)
+#   - Use GitHub usernames or team names (@org/team-name)
+#   - * means "everything"
+# ────────────────────────────────────
+
+# ─── Default: Any file not matched below → Platform team reviews ───
+*                                   @platform-team
+
+# ─── Application Code → App developer team ───
+# WHY: App developers know the business logic best
+src/MedCore.API/                    @app-dev-team
+src/MedCore.Tests/                  @app-dev-team
+
+# ─── Infrastructure (Terraform) → Cloud engineer ───
+# WHY: Terraform changes can create/destroy Azure resources.
+# Only cloud engineers should approve infra changes.
+infrastructure/                     @cloud-eng-team
+
+# ─── CI/CD Pipelines → DevOps engineer ───
+# WHY: Pipeline changes affect how code gets built and deployed.
+# Only DevOps engineers should approve pipeline changes.
+.github/workflows/                  @devops-team
+
+# ─── Reusable Action Templates → DevOps + Cloud engineer ───
+# WHY: Templates are shared across CI + CD. A tampered template
+# could bypass the read-only MI protection.
+# Require BOTH DevOps and Cloud engineering review.
+.github/actions/                    @devops-team @cloud-eng-team
+
+# ─── Platform Scripts → Cloud admin ───
+# WHY: Admin scripts can modify Azure identity, RBAC, and state.
+# Only cloud admins should approve these.
+platform/                           @cloud-admin
+
+# ─── Documentation → Anyone can review ───
+docs/                               @app-dev-team @cloud-eng-team
+
+# ─── Security-sensitive files → Multiple reviewers ───
+# WHY: These files affect security posture. Need extra review.
+**/Dockerfile                       @devops-team @cloud-eng-team
+**/docker-compose*                  @devops-team @cloud-eng-team
+.github/workflows/cd.yml           @devops-team @cloud-eng-team
+infrastructure/modules/key-vault/   @cloud-eng-team @cloud-admin

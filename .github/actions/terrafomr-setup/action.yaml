@@ -1,0 +1,67 @@
+# ──────────────────────────────────────────────────────────────
+# COMPOSITE ACTION: Terraform Setup + Init
+# ──────────────────────────────────────────────────────────────
+# WHY a composite action (template)?
+#   Both CI and CD pipelines need the SAME setup steps:
+#     1. Checkout code
+#     2. Azure Login (OIDC)
+#     3. Setup Terraform
+#     4. Terraform Init
+#
+#   WITHOUT template:
+#     infra-ci.yml → 20 lines of setup (copy-pasted)
+#     infra-cd.yml → 20 lines of setup (copy-pasted)
+#     Bug fix? → Change in TWO places. Miss one = broken.
+#
+#   WITH template:
+#     infra-ci.yml → uses: ./.github/actions/terraform-setup (1 line)
+#     infra-cd.yml → uses: ./.github/actions/terraform-setup (1 line)
+#     Bug fix? → Change in ONE place. Both pipelines get the fix.
+#
+# USAGE:
+#   - uses: ./.github/actions/terraform-setup
+#     with:
+#       environment: dev
+#       working-directory: infrastructure/environments/dev
+# ──────────────────────────────────────────────────────────────
+
+name: "Terraform Setup + Init"
+description: "Reusable template: Azure OIDC login → Terraform install → terraform init"
+
+inputs:
+  working-directory:
+    description: "Path to the Terraform environment folder"
+    required: true
+  azure-client-id:
+    description: "AZURE_CLIENT_ID (from GitHub environment secret)"
+    required: true
+  azure-tenant-id:
+    description: "AZURE_TENANT_ID"
+    required: true
+  azure-subscription-id:
+    description: "AZURE_SUBSCRIPTION_ID"
+    required: true
+  terraform-version:
+    description: "Terraform version to install"
+    required: false
+    default: "1.9.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Azure Login (OIDC — no password)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Terraform Init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform init -input=false

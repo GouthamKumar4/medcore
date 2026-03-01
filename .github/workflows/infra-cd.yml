@@ -1,0 +1,104 @@
+# ──────────────────────────────────────────────────────────────
+# CD PIPELINE: Infrastructure — Deploy on Merge to main
+# ──────────────────────────────────────────────────────────────
+# TRIGGERS:    Push to main (infrastructure/** changes)
+# PURPOSE:     Deploy validated Terraform to Azure
+# WHAT IT DOES:
+#   1. Deploy DEV  → automatic (plan + apply)
+#   2. Deploy PROD → manual approval gate, then plan + apply
+#
+# SECURITY:    OIDC (no secrets stored), separate MI per env
+# TEMPLATES:   terraform-setup (login+init) + terraform-plan (plan+apply)
+# PREREQUISITE: infra-ci.yml already validated on the PR
+# ──────────────────────────────────────────────────────────────
+
+name: "Infra CD — Deploy"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+
+  # Manual trigger for emergency deployments
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+          - all
+
+permissions:
+  id-token: write    # OIDC login to Azure
+  contents: read     # Checkout code
+
+jobs:
+  # ── JOB 1: Deploy DEV (automatic) ───────────────────────────
+  deploy-dev:
+    name: "Deploy — DEV"
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'all'))
+    environment: dev
+    env:
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:        "true"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Terraform Setup + Init (reusable template)
+        uses: ./.github/actions/terraform-setup
+        with:
+          working-directory: infrastructure/environments/dev
+          azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Plan + Apply (reusable template)
+        uses: ./.github/actions/terraform-plan
+        with:
+          working-directory: infrastructure/environments/dev
+          apply: "true"
+
+  # ── JOB 2: Deploy PROD (manual approval gate) ───────────────
+  deploy-prod:
+    name: "Deploy — PROD"
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.environment == 'prod' || github.event.inputs.environment == 'all'))
+    environment: prod   # ← GitHub environment with required reviewers
+    env:
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:        "true"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Terraform Setup + Init (reusable template)
+        uses: ./.github/actions/terraform-setup
+        with:
+          working-directory: infrastructure/environments/prod
+          azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Plan + Apply (reusable template)
+        uses: ./.github/actions/terraform-plan
+        with:
+          working-directory: infrastructure/environments/prod
+          apply: "true"
