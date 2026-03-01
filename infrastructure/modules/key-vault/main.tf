@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# MODULE: Key Vault
+# MODULE: Azure Key Vault
 # ──────────────────────────────────────────────────────────────
 # Creates: Key Vault + RBAC + Stores SQL password as secret
 # ──────────────────────────────────────────────────────────────
@@ -43,3 +43,4 @@ resource "azurerm_key_vault_secret" "sql_admin_password" {
 
   depends_on = [azurerm_role_assignment.admin]
 }
+
