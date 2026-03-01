@@ -31,6 +31,16 @@ provider "azurerm" {
     }
   }
   subscription_id = var.subscription_id
+
+  # WHY resource_provider_registrations = "none"?
+  # By default, azurerm tries to register ALL 45+ resource providers it supports
+  # (Microsoft.AVS, Microsoft.Databricks, Microsoft.MachineLearningServices, etc.)
+  # Registration = subscription-level write: Microsoft.XXX/register/action
+  # Our Plan MIs (Reader on RG) don't have subscription-level write → 403 on all.
+  # Our Deploy MIs (Contributor on RG) also don't have subscription-level write.
+  # Solution: Skip auto-registration. Cloud admin pre-registers needed providers.
+  # See: platform/scripts/01-cloud-admin-setup.ps1
+  resource_provider_registrations = "none"
 }
 
 data "azurerm_client_config" "current" {}
