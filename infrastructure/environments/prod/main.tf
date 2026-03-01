@@ -69,8 +69,15 @@ module "key_vault" {
   sql_admin_password       = var.sql_admin_password
   soft_delete_days         = 90
   purge_protection         = true
-  app_service_principal_id = module.app_service.principal_id
   tags                     = local.common_tags
+}
+
+# App Service System MI → read Key Vault secrets
+# (See dev/main.tf for detailed WHY comment)
+resource "azurerm_role_assignment" "app_kv_secrets_reader" {
+  scope                = module.key_vault.key_vault_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.app_service.principal_id
 }
 
 module "sql" {

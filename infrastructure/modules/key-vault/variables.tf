@@ -28,12 +28,6 @@ variable "resource_group_name" {
   type        = string
 }
 
-variable "app_service_principal_id" {
-  description = "App Service System MI principal ID"
-  type        = string
-  default     = ""
-}
-
 variable "sql_admin_password" {
   description = "SQL admin password to store as secret"
   type        = string

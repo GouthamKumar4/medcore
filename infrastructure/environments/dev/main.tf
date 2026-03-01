@@ -76,8 +76,20 @@ module "key_vault" {
   sql_admin_password       = var.sql_admin_password
   soft_delete_days         = 7
   purge_protection         = false
-  app_service_principal_id = module.app_service.principal_id
   tags                     = local.common_tags
+}
+
+# App Service System MI → read Key Vault secrets
+# WHY here and not in the key-vault module?
+#   module.app_service.principal_id is unknown at plan time (SystemAssigned MI
+#   only exists after apply). Terraform cannot evaluate count/for_each on
+#   unknown values. By placing it here unconditionally (no count needed —
+#   we always have both App Service and Key Vault), Terraform handles the
+#   unknown principal_id as a normal attribute that gets resolved at apply.
+resource "azurerm_role_assignment" "app_kv_secrets_reader" {
+  scope                = module.key_vault.key_vault_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.app_service.principal_id
 }
 
 # ─── SQL Database ───
