@@ -45,10 +45,6 @@ inputs:
     description: "Terraform version to install"
     required: false
     default: "1.9.0"
-  lock:
-    description: "Acquire state lock during init. Set 'false' for CI (Plan MIs have Storage Blob Data Reader — no lease/write permission)"
-    required: false
-    default: "true"
 
 runs:
   using: "composite"
@@ -75,19 +71,19 @@ runs:
     # With this:    terraform init → Azure AD token → blob access → ✅
     #
     # RBAC required on storage account:
-    #   Plan MIs:   Storage Blob Data Reader (read state only — no lease/lock needed with -lock=false)
-    #   Deploy MIs: Storage Blob Data Contributor (read/write state + locking via leases)
+    #   Plan MIs:   Storage Blob Data Contributor (read/write state + locking)
+    #   Deploy MIs: Storage Blob Data Contributor (read/write state + locking)
+    #
+    # WHY Contributor for Plan MIs (not Reader)?
+    #   azurerm backend calls PutBlockBlob during init/plan for state locking.
+    #   This happens INSIDE the backend Go code, BEFORE the CLI -lock flag is
+    #   evaluated. Even -lock=false doesn't prevent it. Blob Data Reader → 403.
+    #   Security is enforced by Reader role on RGs (cannot create/modify/delete resources).
     - name: Configure Azure AD auth for Terraform state backend
       shell: bash
       run: echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
 
-    # WHY -lock=${{ inputs.lock }}?
-    # terraform init ALSO acquires a state lock (blob lease) to safely read state.
-    # Plan MIs have Storage Blob Data Reader → cannot create leases (write op).
-    # Without -lock=false: init → PutBlockBlob (lock file) → 403 "AuthorizationPermissionMismatch"
-    # With -lock=false:    init → reads state directly → ✅
-    # Deploy MIs (CD) use lock=true (default) — they have Storage Blob Data Contributor.
     - name: Terraform Init
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: terraform init -input=false -lock=${{ inputs.lock }}
+      run: terraform init -input=false

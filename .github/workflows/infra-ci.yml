@@ -91,6 +91,11 @@ jobs:
       ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:        "true"
+      # Terraform input variables (TF_VAR_* → auto-mapped by Terraform)
+      TF_VAR_subscription_id:     ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_sql_admin_password:  ${{ secrets.SQL_ADMIN_PASSWORD }}
+      TF_VAR_aad_admin_login:     ${{ secrets.AAD_ADMIN_LOGIN }}
+      TF_VAR_aad_admin_object_id: ${{ secrets.AAD_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -102,20 +107,12 @@ jobs:
           azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          lock: "false"        # ← Plan MI has Blob Data Reader (no lease/write permission)
 
-      # WHY lock: "false"?
-      # Plan MIs have Storage Blob Data Reader (not Contributor).
-      # State locking requires a blob lease (write operation) → needs Contributor.
-      # CI only runs `plan` (read-only comparison) — two simultaneous plans reading
-      # the same state is harmless. No risk of state corruption.
-      # CD (deploy) uses lock: true (default) because apply WRITES state.
       - name: Terraform Plan (reusable template)
         id: plan
         uses: ./.github/actions/terraform-plan
         with:
           working-directory: infrastructure/environments/dev
-          lock: "false"
         continue-on-error: true
 
       - name: Post Plan on PR
@@ -167,6 +164,11 @@ jobs:
       ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:        "true"
+      # Terraform input variables (TF_VAR_* → auto-mapped by Terraform)
+      TF_VAR_subscription_id:     ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_sql_admin_password:  ${{ secrets.SQL_ADMIN_PASSWORD }}
+      TF_VAR_aad_admin_login:     ${{ secrets.AAD_ADMIN_LOGIN }}
+      TF_VAR_aad_admin_object_id: ${{ secrets.AAD_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -178,14 +180,12 @@ jobs:
           azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          lock: "false"        # ← Plan MI has Blob Data Reader (no lease/write permission)
 
       - name: Terraform Plan (reusable template)
         id: plan
         uses: ./.github/actions/terraform-plan
         with:
           working-directory: infrastructure/environments/prod
-          lock: "false"
         continue-on-error: true
 
       - name: Post Plan on PR
