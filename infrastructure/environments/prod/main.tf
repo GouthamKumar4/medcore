@@ -31,6 +31,11 @@ provider "azurerm" {
     }
   }
   subscription_id = var.subscription_id
+
+  # Skip auto-registration — Plan MIs (Reader) and Deploy MIs (Contributor on RG)
+  # don't have subscription-level Microsoft.XXX/register/action permission.
+  # Cloud admin pre-registers needed providers. See: platform/scripts/01-cloud-admin-setup.ps1
+  resource_provider_registrations = "none"
 }
 
 data "azurerm_client_config" "current" {}
