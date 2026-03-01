@@ -1,0 +1,10 @@
+# ────────────────────────────────────────────────────
+# PROD Environment — Terraform Variables
+# ────────────────────────────────────────────────────
+# ⚠️  PROD — Use a DIFFERENT, STRONGER password than dev!
+# ────────────────────────────────────────────────────
+
+subscription_id     = "YOUR_SUBSCRIPTION_ID"
+sql_admin_password  = "CHANGE_ME_Prod_Strong_Password!"
+aad_admin_login     = "Your Name"
+aad_admin_object_id = "YOUR_AZURE_AD_OBJECT_ID"

@@ -1,0 +1,26 @@
+# ────────────────────────────────────────────────────
+# DEV Environment — Terraform Variables
+# ────────────────────────────────────────────────────
+# USAGE:
+#   cp terraform.tfvars.example terraform.tfvars
+#   # Fill in real values in terraform.tfvars
+#   terraform plan → terraform apply
+#
+# ⚠️  terraform.tfvars is in .gitignore — NEVER commit it.
+# ────────────────────────────────────────────────────
+
+# Azure Subscription ID
+# Find: az account show --query id -o tsv
+subscription_id = "YOUR_SUBSCRIPTION_ID"
+
+# SQL admin password (min 8 chars, upper+lower+number+special)
+sql_admin_password = "CHANGE_ME_Use_A_Strong_Password!"
+
+# Your public IP for SQL firewall
+# Find: https://whatismyipaddress.com
+developer_ip = "0.0.0.0"
+
+# Azure AD admin for SQL Server
+# Find: az ad signed-in-user show --query "{name:displayName, id:id}" -o table
+aad_admin_login     = "Your Name"
+aad_admin_object_id = "YOUR_AZURE_AD_OBJECT_ID"
