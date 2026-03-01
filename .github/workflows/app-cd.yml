@@ -1,0 +1,125 @@
+# ──────────────────────────────────────────────────────────────
+# APP CD — Deploy Application on Merge to main
+# ──────────────────────────────────────────────────────────────
+# TRIGGER: Push to main (src/ changes)
+# DOES:    Build → Publish → Deploy DEV → Deploy PROD
+#
+# FLOW:
+#   ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+#   │  Build       │────▶│  Deploy DEV   │────▶│  Deploy PROD │
+#   │  (artifact)  │     │  (automatic)  │     │  (approval)  │
+#   └─────────────┘     └──────────────┘     └──────────────┘
+#
+# TEMPLATES USED:
+#   dotnet-build   → Build + publish artifact
+#   deploy-webapp  → OIDC login + zip deploy + health check
+#
+# FUTURE PATH (containerize):
+#   Replace deploy-webapp with docker-build + deploy-aks
+#   Build job stays UNCHANGED — only deploy jobs change.
+#
+# SECURITY:
+#   OIDC — no secrets stored
+#   Deploy MI — Contributor on env resource group
+#   GitHub environment protection rules for prod
+# ──────────────────────────────────────────────────────────────
+
+name: "App — CD (Deploy)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/app-cd.yml"
+      - ".github/actions/dotnet-build/**"
+      - ".github/actions/deploy-webapp/**"
+
+  # Manual trigger — redeploy without code change
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+          - all
+
+permissions:
+  id-token: write    # OIDC login to Azure
+  contents: read     # Checkout code
+
+# ──────────────────────────────────────────────────────────────
+# JOB 1: Build + Publish artifact (no Azure credentials needed)
+# ──────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: "📦 Build + Publish"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build + Publish
+        uses: ./.github/actions/dotnet-build
+        with:
+          project-path: src/MedCore.Api/MedCore.Api.csproj
+          publish: "true"
+          artifact-name: medcore-api
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2: Deploy to DEV (automatic — no approval gate)
+  # ──────────────────────────────────────────────────────────
+  deploy-dev:
+    name: "🚀 Deploy — DEV"
+    needs: build
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'all'))
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to DEV App Service
+        uses: ./.github/actions/deploy-webapp
+        with:
+          artifact-name: medcore-api
+          azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          app-name: app-medcore-dev-cin
+          resource-group: rg-medcore-dev-cin
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3: Deploy to PROD (manual approval via GitHub env)
+  # ──────────────────────────────────────────────────────────
+  deploy-prod:
+    name: "🚀 Deploy — PROD"
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.environment == 'prod' || github.event.inputs.environment == 'all'))
+    environment: prod    # ← GitHub environment with required reviewers
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to PROD App Service
+        uses: ./.github/actions/deploy-webapp
+        with:
+          artifact-name: medcore-api
+          azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          app-name: app-medcore-prod-cin
+          resource-group: rg-medcore-prod-cin

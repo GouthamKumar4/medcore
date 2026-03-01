@@ -1,0 +1,95 @@
+# ──────────────────────────────────────────────────────────────
+# TEMPLATE: Deploy to Azure App Service (Legacy/WebApp)
+# ──────────────────────────────────────────────────────────────
+# WHO uses this:
+#   app-cd.yml → deploy-dev, deploy-prod jobs
+#
+# WHY a template?
+#   Deploy logic identical for dev and prod (only secrets differ).
+#   Template if used 2+ times = DRY.
+#
+# WHAT it does:
+#   1. Download published artifact
+#   2. Azure OIDC login (same as terraform-setup — passwordless)
+#   3. Deploy to Azure App Service using az webapp deploy
+#
+# FUTURE: When you containerize, swap this template with
+#   docker-deploy/action.yml → push to ACR → deploy to AKS
+#   The CI pipeline (app-ci.yml) stays UNCHANGED.
+#   Only the CD pipeline swaps the deploy template.
+# ──────────────────────────────────────────────────────────────
+
+name: "Deploy to App Service"
+description: "Download artifact + OIDC login + deploy to Azure App Service"
+
+inputs:
+  artifact-name:
+    description: "Name of the artifact to download"
+    required: true
+  azure-client-id:
+    description: "Managed Identity client ID"
+    required: true
+  azure-tenant-id:
+    description: "Azure AD tenant ID"
+    required: true
+  azure-subscription-id:
+    description: "Azure subscription ID"
+    required: true
+  app-name:
+    description: "Azure App Service name"
+    required: true
+  resource-group:
+    description: "Azure resource group name"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    # ── 1. Download artifact ──
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ./deploy
+
+    # ── 2. Azure OIDC login ──
+    - name: Azure Login (OIDC)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+
+    # ── 3. Deploy to App Service ──
+    # WHY az webapp deploy (not azure/webapps-deploy action)?
+    #   - az CLI is always available on runners
+    #   - Fewer moving parts (no third-party action version to track)
+    #   - Same CLI works for zip deploy, war deploy, container deploy
+    #   - Easier to debug (just a CLI command)
+    - name: Deploy to App Service
+      shell: bash
+      run: |
+        cd ./deploy
+        zip -r ../app.zip .
+        az webapp deploy \
+          --name ${{ inputs.app-name }} \
+          --resource-group ${{ inputs.resource-group }} \
+          --src-path ../app.zip \
+          --type zip \
+          --async false
+
+    # ── 4. Verify deployment ──
+    - name: Health check
+      shell: bash
+      run: |
+        echo "Waiting 30s for app to warm up..."
+        sleep 30
+        URL="https://${{ inputs.app-name }}.azurewebsites.net/health"
+        echo "Checking: $URL"
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" --max-time 30)
+        echo "HTTP Status: $STATUS"
+        if [ "$STATUS" -ne 200 ]; then
+          echo "::error::Health check failed! Expected 200, got $STATUS"
+          exit 1
+        fi
+        echo "✅ Health check passed!"
