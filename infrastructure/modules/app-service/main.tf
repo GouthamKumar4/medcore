@@ -51,7 +51,7 @@ resource "azurerm_linux_web_app" "this" {
   )
 
   dynamic "connection_string" {
-    for_each = var.sql_connection_string != "" ? [1] : []
+    for_each = var.sql_connection_string != "" ? ["enabled"] : []
     content {
       name  = "DefaultConnection"
       type  = "SQLAzure"
