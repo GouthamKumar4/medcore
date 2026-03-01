@@ -102,6 +102,7 @@ jobs:
           azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          lock: "false"        # ← Plan MI has Blob Data Reader (no lease/write permission)
 
       # WHY lock: "false"?
       # Plan MIs have Storage Blob Data Reader (not Contributor).
@@ -177,6 +178,7 @@ jobs:
           azure-client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          lock: "false"        # ← Plan MI has Blob Data Reader (no lease/write permission)
 
       - name: Terraform Plan (reusable template)
         id: plan

@@ -45,6 +45,10 @@ inputs:
     description: "Terraform version to install"
     required: false
     default: "1.9.0"
+  lock:
+    description: "Acquire state lock during init. Set 'false' for CI (Plan MIs have Storage Blob Data Reader — no lease/write permission)"
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
@@ -77,7 +81,13 @@ runs:
       shell: bash
       run: echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
 
+    # WHY -lock=${{ inputs.lock }}?
+    # terraform init ALSO acquires a state lock (blob lease) to safely read state.
+    # Plan MIs have Storage Blob Data Reader → cannot create leases (write op).
+    # Without -lock=false: init → PutBlockBlob (lock file) → 403 "AuthorizationPermissionMismatch"
+    # With -lock=false:    init → reads state directly → ✅
+    # Deploy MIs (CD) use lock=true (default) — they have Storage Blob Data Contributor.
     - name: Terraform Init
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: terraform init -input=false
+      run: terraform init -input=false -lock=${{ inputs.lock }}
