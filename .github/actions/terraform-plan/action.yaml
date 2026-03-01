@@ -37,6 +37,10 @@ inputs:
     description: "Set 'true' to also run terraform apply after plan"
     required: false
     default: "false"
+  lock:
+    description: "Acquire state lock during plan. Set 'false' for CI (read-only plan MIs don't need lease permission)"
+    required: false
+    default: "true"
 
 outputs:
   plan-exitcode:
@@ -55,7 +59,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         set +e
-        terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan.txt
+        terraform plan -input=false -no-color -out=tfplan -detailed-exitcode -lock=${{ inputs.lock }} 2>&1 | tee plan.txt
         EXITCODE=$?
         echo "exitcode=$EXITCODE" >> $GITHUB_OUTPUT
         # Exit codes: 0 = no changes, 1 = error, 2 = changes pending

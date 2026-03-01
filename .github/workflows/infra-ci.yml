@@ -103,11 +103,18 @@ jobs:
           azure-tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # WHY lock: "false"?
+      # Plan MIs have Storage Blob Data Reader (not Contributor).
+      # State locking requires a blob lease (write operation) → needs Contributor.
+      # CI only runs `plan` (read-only comparison) — two simultaneous plans reading
+      # the same state is harmless. No risk of state corruption.
+      # CD (deploy) uses lock: true (default) because apply WRITES state.
       - name: Terraform Plan (reusable template)
         id: plan
         uses: ./.github/actions/terraform-plan
         with:
           working-directory: infrastructure/environments/dev
+          lock: "false"
         continue-on-error: true
 
       - name: Post Plan on PR
@@ -176,6 +183,7 @@ jobs:
         uses: ./.github/actions/terraform-plan
         with:
           working-directory: infrastructure/environments/prod
+          lock: "false"
         continue-on-error: true
 
       - name: Post Plan on PR
