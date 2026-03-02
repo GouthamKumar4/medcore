@@ -1,27 +1,34 @@
 # ──────────────────────────────────────────────────────────────
-# APP CD — Deploy Application on Merge to main
+# APP CD — DevSecOps Gates + Deploy on Merge to main
 # ──────────────────────────────────────────────────────────────
-# TRIGGER: Push to main (src/ changes)
-# DOES:    Build → Publish → Deploy DEV → Deploy PROD
+# TRIGGER: Push to main (src/ changes), or manual dispatch
+#
+# WHY re-run CI gates in CD?
+#   PR CI ran hours/days ago. Between merge and deploy:
+#   - New CVE published (dependency now vulnerable)
+#   - Someone pushed directly to main (bypassed PR)
+#   - PR was from a fork (limited CI permissions)
+#   The artifact deployed to PROD MUST be scanned fresh.
 #
 # FLOW:
-#   ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-#   │  Build       │────▶│  Deploy DEV   │────▶│  Deploy PROD │
-#   │  (artifact)  │     │  (automatic)  │     │  (approval)  │
-#   └─────────────┘     └──────────────┘     └──────────────┘
+#   ┌───────────────┐     ┌───────────┐     ┌────────────┐     ┌────────────┐
+#   │ DevSecOps     │────▶│  Build    │────▶│ Deploy DEV │────▶│ Deploy PROD│
+#   │ Gates         │     │  Artifact │     │ (auto)     │     │ (approval) │
+#   │               │     │           │     │            │     │            │
+#   │ build+test    │     │ publish   │     │ zip deploy │     │ zip deploy │
+#   │ trivy+owasp   │     │ artifact  │     │ health ✓   │     │ health ✓   │
+#   │ sonarcloud    │     │           │     │            │     │            │
+#   └───────────────┘     └───────────┘     └────────────┘     └────────────┘
+#        MUST PASS            MUST PASS         MUST PASS        APPROVAL
 #
 # TEMPLATES USED:
-#   dotnet-build   → Build + publish artifact
-#   deploy-webapp  → OIDC login + zip deploy + health check
+#   ci-devsecops.yml → enforced gates (same as PR CI)
+#   dotnet-build     → build + publish artifact
+#   deploy-webapp    → OIDC login + zip deploy + health check
 #
 # FUTURE PATH (containerize):
 #   Replace deploy-webapp with docker-build + deploy-aks
-#   Build job stays UNCHANGED — only deploy jobs change.
-#
-# SECURITY:
-#   OIDC — no secrets stored
-#   Deploy MI — Contributor on env resource group
-#   GitHub environment protection rules for prod
+#   Gates + build stay UNCHANGED — only deploy jobs change.
 # ──────────────────────────────────────────────────────────────
 
 name: "App — CD (Deploy)"
@@ -49,15 +56,33 @@ on:
           - all
 
 permissions:
-  id-token: write    # OIDC login to Azure
-  contents: read     # Checkout code
+  id-token: write      # OIDC login to Azure
+  contents: read       # Checkout code
+  pull-requests: write # DevSecOps report (if triggered by PR merge)
+  security-events: write
 
-# ──────────────────────────────────────────────────────────────
-# JOB 1: Build + Publish artifact (no Azure credentials needed)
-# ──────────────────────────────────────────────────────────────
 jobs:
+  # ────────────────────────────────────────────────────────────
+  # GATE: Enforced DevSecOps checks (SAME as PR CI)
+  # Must pass before artifact is built or anything is deployed.
+  # ────────────────────────────────────────────────────────────
+  ci-gates:
+    name: "🔒 DevSecOps Gates"
+    uses: ./.github/workflows/ci-devsecops.yml
+    with:
+      language: "dotnet"
+      project-path: "src/MedCore.Api/MedCore.Api.csproj"
+      scan-path: "src/"
+      sonar-org: "gouthamkumar4"
+      sonar-project-key: "GouthamKumar4_simple-app"
+    secrets: inherit
+
+  # ────────────────────────────────────────────────────────────
+  # BUILD: Create deploy artifact (only after gates pass)
+  # ────────────────────────────────────────────────────────────
   build:
-    name: "📦 Build + Publish"
+    name: "📦 Build Artifact"
+    needs: ci-gates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -70,9 +95,9 @@ jobs:
           publish: "true"
           artifact-name: medcore-api
 
-  # ──────────────────────────────────────────────────────────
-  # JOB 2: Deploy to DEV (automatic — no approval gate)
-  # ──────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────
+  # DEPLOY DEV: Automatic (no approval gate)
+  # ────────────────────────────────────────────────────────────
   deploy-dev:
     name: "🚀 Deploy — DEV"
     needs: build
@@ -97,9 +122,9 @@ jobs:
           app-name: app-medcore-dev-cin
           resource-group: rg-medcore-dev-cin
 
-  # ──────────────────────────────────────────────────────────
-  # JOB 3: Deploy to PROD (manual approval via GitHub env)
-  # ──────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────
+  # DEPLOY PROD: Manual approval via GitHub environment
+  # ────────────────────────────────────────────────────────────
   deploy-prod:
     name: "🚀 Deploy — PROD"
     needs: deploy-dev

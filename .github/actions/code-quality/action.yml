@@ -1,0 +1,130 @@
+# ──────────────────────────────────────────────────────────────
+# TEMPLATE: Code Quality — SonarCloud (Multi-Language)
+# ──────────────────────────────────────────────────────────────
+# WHO uses this:
+#   ci-devsecops.yml → code-quality job (enforced gate)
+#
+# LANGUAGES SUPPORTED:
+#   dotnet  → begin → build → test → end (special .NET scanner)
+#   python  → SonarSource/sonarqube-scan-action (auto-detect)
+#   js/ts   → SonarSource/sonarqube-scan-action (auto-detect)
+#   java    → SonarSource/sonarqube-scan-action (auto-detect)
+#   go      → SonarSource/sonarqube-scan-action (auto-detect)
+#
+# WHY two paths?
+#   .NET requires a SPECIAL scanner (begin → build → end) because
+#   the compiler instruments the build. All other languages use the
+#   generic scanner which reads source files directly.
+#
+# SONARCLOUD SETUP (one-time per repo):
+#   1. https://sonarcloud.io → Import from GitHub
+#   2. Free for public repos ✅
+#   3. Add SONAR_TOKEN to GitHub repo secrets
+#   4. Each repo = separate SonarCloud project
+# ──────────────────────────────────────────────────────────────
+
+name: "Code Quality — SonarCloud"
+description: "SonarCloud analysis — auto-selects scanner based on language"
+
+inputs:
+  language:
+    description: "Project language: dotnet, python, javascript, java, go"
+    required: true
+  project-path:
+    description: "Path to project file (.csproj for dotnet, . for others)"
+    required: false
+    default: "."
+  sonar-token:
+    description: "SonarCloud token (from secrets)"
+    required: true
+  sonar-org:
+    description: "SonarCloud organization key"
+    required: true
+  sonar-project-key:
+    description: "SonarCloud project key"
+    required: true
+  dotnet-version:
+    description: ".NET SDK version (only for dotnet)"
+    required: false
+    default: "8.0.x"
+
+runs:
+  using: "composite"
+  steps:
+    # ─────────────────────────────────────────────────────────
+    # PATH A: .NET (begin → build → test → end)
+    # ─────────────────────────────────────────────────────────
+    - name: "[.NET] Setup SDK"
+      if: inputs.language == 'dotnet'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Setup Java 17 (SonarScanner needs it)
+      uses: actions/setup-java@v4
+      with:
+        distribution: "temurin"
+        java-version: "17"
+
+    - name: "[.NET] Install SonarScanner"
+      if: inputs.language == 'dotnet'
+      shell: bash
+      run: dotnet tool install --global dotnet-sonarscanner
+
+    - name: "[.NET] SonarCloud — Begin"
+      if: inputs.language == 'dotnet'
+      shell: bash
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+      run: |
+        dotnet sonarscanner begin \
+          /k:"${{ inputs.sonar-project-key }}" \
+          /o:"${{ inputs.sonar-org }}" \
+          /d:sonar.host.url="https://sonarcloud.io" \
+          /d:sonar.token="${SONAR_TOKEN}" \
+          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+
+    - name: "[.NET] Build"
+      if: inputs.language == 'dotnet'
+      shell: bash
+      run: dotnet build ${{ inputs.project-path }} --configuration Release
+
+    - name: "[.NET] Test with coverage"
+      if: inputs.language == 'dotnet'
+      shell: bash
+      run: |
+        TEST_PROJECTS=$(find "$(dirname ${{ inputs.project-path }})/.." \
+          -name "*.Tests.csproj" -o -name "*.Test.csproj" 2>/dev/null || true)
+        if [ -n "$TEST_PROJECTS" ]; then
+          for proj in $TEST_PROJECTS; do
+            dotnet test "$proj" \
+              --configuration Release \
+              --no-build \
+              --collect:"XPlat Code Coverage" \
+              -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+          done
+        else
+          echo "No test projects found — coverage will be empty"
+        fi
+
+    - name: "[.NET] SonarCloud — End"
+      if: inputs.language == 'dotnet'
+      shell: bash
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+      run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+    # ─────────────────────────────────────────────────────────
+    # PATH B: All other languages (Python, JS, Java, Go, etc.)
+    # SonarCloud auto-detects language from source files.
+    # ─────────────────────────────────────────────────────────
+    - name: "[Generic] SonarCloud Scan"
+      if: inputs.language != 'dotnet'
+      uses: SonarSource/sonarqube-scan-action@v5
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: https://sonarcloud.io
+      with:
+        args: >
+          -Dsonar.organization=${{ inputs.sonar-org }}
+          -Dsonar.projectKey=${{ inputs.sonar-project-key }}

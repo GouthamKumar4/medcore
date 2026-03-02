@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────────────────────
+# TEMPLATE: Security Scan (SAST + Dependency + SBOM)
+# ──────────────────────────────────────────────────────────────
+# WHO uses this:
+#   app-ci.yml → security job (runs after build passes)
+#
+# WHAT it does:
+#   1. Trivy filesystem scan (vulnerabilities in code + deps)
+#   2. OWASP Dependency Check (known CVEs in NuGet packages)
+#   3. SBOM generation (Software Bill of Materials)
+#
+# WHY a template?
+#   Same security checks for dev and prod.
+#   Add a new scan? Change 1 file, all pipelines get it.
+#
+# LANGUAGE: Works for .NET, Python, Node.js — Trivy auto-detects
+# ──────────────────────────────────────────────────────────────
+
+name: "Security Scan"
+description: "Trivy FS scan + OWASP dependency check + SBOM"
+
+inputs:
+  scan-path:
+    description: "Path to scan"
+    required: false
+    default: "."
+  severity:
+    description: "Minimum severity to fail (CRITICAL, HIGH, MEDIUM, LOW)"
+    required: false
+    default: "HIGH,CRITICAL"
+  fail-on-findings:
+    description: "Fail pipeline if vulnerabilities found? (true/false)"
+    required: false
+    default: "true"
+  generate-sbom:
+    description: "Generate SBOM? (true/false)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    # ── 1. Trivy Filesystem Scan ──
+    # Scans source code + dependency lock files for known CVEs
+    # Detects: NuGet (*.csproj), npm, pip, Go, Dockerfile issues
+    - name: "🔍 Trivy — Filesystem Scan"
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        scan-type: fs
+        scan-ref: ${{ inputs.scan-path }}
+        severity: ${{ inputs.severity }}
+        exit-code: ${{ inputs.fail-on-findings == 'true' && '1' || '0' }}
+        ignore-unfixed: true
+        format: table
+
+    # ── 2. OWASP Dependency Check ──
+    # Deep scan of dependencies against NVD (National Vulnerability Database)
+    # More thorough than Trivy for transitive dependency chains
+    - name: "🛡️ OWASP — Dependency Check"
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        project: "MedCore"
+        path: ${{ inputs.scan-path }}
+        format: "HTML"
+      continue-on-error: true   # OWASP can be flaky with NVD API limits
+
+    - name: Upload OWASP Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: owasp-report
+        path: reports/
+        retention-days: 7
+
+    # ── 3. SBOM Generation ──
+    # Software Bill of Materials — required for compliance
+    # Lists every dependency + version (like a food ingredients label)
+    - name: "📋 Generate SBOM"
+      if: inputs.generate-sbom == 'true'
+      uses: anchore/sbom-action@v0
+      with:
+        path: ${{ inputs.scan-path }}
+        format: spdx-json
+        output-file: sbom.spdx.json
+
+    - name: Upload SBOM
+      if: inputs.generate-sbom == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom
+        path: sbom.spdx.json
+        retention-days: 30

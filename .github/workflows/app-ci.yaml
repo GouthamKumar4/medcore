@@ -1,17 +1,25 @@
 # ──────────────────────────────────────────────────────────────
-# APP CI — Validate application on Pull Request
+# APP CI — Calls the enforced DevSecOps pipeline
 # ──────────────────────────────────────────────────────────────
-# TRIGGER: Pull request to main (src/ changes)
-# DOES:    Build → Test → Report
-# DOES NOT: Deploy anything (that's app-cd.yml)
+# THIS IS ALL A DEVELOPER WRITES. Everything else is enforced.
 #
-# WHY separate from infra-ci.yml?
-#   infra-ci.yml → infrastructure changes (Terraform)
-#   app-ci.yml   → application changes (.NET code)
-#   Different triggers, different tools, different reviewers.
+# The reusable workflow (ci-devsecops.yml) handles:
+#   ✅ Build + Test (language-aware)
+#   ✅ Security Scan (Trivy + OWASP + SBOM)
+#   ✅ Code Quality (SonarCloud — multi-language)
+#   ✅ PR comment with all gate results
+#
+# Developer CANNOT skip any gate. Platform team controls
+# ci-devsecops.yml — if a new check is added there,
+# ALL repos using it get the check automatically.
+#
+# FOR OTHER LANGUAGES, just change language + project-path:
+#   language: python    project-path: src/app/requirements.txt
+#   language: javascript  project-path: src/app/package.json
+#   language: java      project-path: src/app/pom.xml
 # ──────────────────────────────────────────────────────────────
 
-name: "App — CI (Build + Test)"
+name: "App — CI (DevSecOps)"
 
 on:
   pull_request:
@@ -19,44 +27,23 @@ on:
     paths:
       - "src/**"
       - ".github/workflows/app-ci.yml"
-      - ".github/actions/dotnet-build/**"
+
+  # Manual trigger — run CI checks on any branch anytime
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write     # post build results as PR comment
+  pull-requests: write
+  security-events: write
 
 jobs:
-  build-and-test:
-    name: "🔨 Build + Test"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build + Test
-        uses: ./.github/actions/dotnet-build
-        with:
-          project-path: src/MedCore.Api/MedCore.Api.csproj
-          publish: "false"
-
-      - name: Post build result to PR
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
-            const body = `### ${status} Application Build — \`${{ job.status }}\`
-            | Check | Status |
-            |-------|--------|
-            | .NET Restore | ${{ job.status == 'success' && '✅' || '❌' }} |
-            | Build (Release) | ${{ job.status == 'success' && '✅' || '❌' }} |
-            | Tests | ${{ job.status == 'success' && '✅ passed' || '❌ failed' }} |
-
-            > Commit: \`${{ github.sha }}\``;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+  ci:
+    name: "DevSecOps"
+    uses: ./.github/workflows/ci-devsecops.yml
+    with:
+      language: "dotnet"
+      project-path: "src/MedCore.Api/MedCore.Api.csproj"
+      scan-path: "src/"
+      sonar-org: "gouthamkumar4"
+      sonar-project-key: "GouthamKumar4_simple-app"
+    secrets: inherit

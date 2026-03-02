@@ -1,0 +1,115 @@
+# ──────────────────────────────────────────────────────────────
+# TEMPLATE: Docker Build + Push to ACR (Future — Container Path)
+# ──────────────────────────────────────────────────────────────
+# STATUS: 🔮 PLACEHOLDER — not used yet
+#
+# WHEN to activate:
+#   When MedCore moves from App Service → AKS (Kubernetes)
+#   or Azure Container Apps. The migration path:
+#
+#   TODAY:   dotnet-build → deploy-webapp  (App Service zip deploy)
+#   FUTURE:  dotnet-build → docker-build → deploy-aks
+#
+# WHY create this now?
+#   Platform engineer provides templates AHEAD of time.
+#   When the team says "we need containers", the template is ready.
+#   No scrambling. No ad-hoc Dockerfiles. Governed from day one.
+#
+# WHAT it will do:
+#   1. Azure OIDC login (same passwordless auth)
+#   2. Login to Azure Container Registry (ACR)
+#   3. Build Docker image with proper tagging
+#   4. Push to ACR
+#   5. Output the image tag for downstream deploy
+#
+# PREREQUISITES (when activated):
+#   - Azure Container Registry (add to Terraform modules)
+#   - Dockerfile in src/MedCore.Api/
+#   - deploy-aks/action.yml or deploy-container-app/action.yml
+# ──────────────────────────────────────────────────────────────
+
+name: "Docker Build + Push to ACR"
+description: "Build Docker image and push to Azure Container Registry"
+
+inputs:
+  azure-client-id:
+    description: "Managed Identity client ID"
+    required: true
+  azure-tenant-id:
+    description: "Azure AD tenant ID"
+    required: true
+  azure-subscription-id:
+    description: "Azure subscription ID"
+    required: true
+  acr-name:
+    description: "Azure Container Registry name (e.g., crmedcore)"
+    required: true
+  image-name:
+    description: "Docker image name (e.g., medcore-api)"
+    required: true
+  dockerfile-path:
+    description: "Path to the Dockerfile"
+    required: false
+    default: "src/MedCore.Api/Dockerfile"
+  build-context:
+    description: "Docker build context"
+    required: false
+    default: "."
+
+outputs:
+  image-tag:
+    description: "Full image tag (acr.azurecr.io/name:sha)"
+    value: ${{ steps.tag.outputs.image-tag }}
+
+runs:
+  using: "composite"
+  steps:
+    # ── 1. Azure OIDC login ──
+    - name: Azure Login (OIDC)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+
+    # ── 2. ACR login ──
+    - name: Login to ACR
+      shell: bash
+      run: az acr login --name ${{ inputs.acr-name }}
+
+    # ── 3. Generate image tag ──
+    - name: Generate image tag
+      id: tag
+      shell: bash
+      run: |
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        IMAGE_TAG="${{ inputs.acr-name }}.azurecr.io/${{ inputs.image-name }}:${SHORT_SHA}"
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "Image tag: $IMAGE_TAG"
+
+    # ── 4. Build ──
+    - name: Build Docker image
+      shell: bash
+      run: |
+        docker build \
+          -t ${{ steps.tag.outputs.image-tag }} \
+          -t ${{ inputs.acr-name }}.azurecr.io/${{ inputs.image-name }}:latest \
+          -f ${{ inputs.dockerfile-path }} \
+          ${{ inputs.build-context }}
+
+    # ── 5. Trivy image scan (before push — don't push vulnerable images) ──
+    - name: "🔍 Trivy — Image Scan"
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        image-ref: ${{ steps.tag.outputs.image-tag }}
+        severity: CRITICAL
+        ignore-unfixed: true
+        exit-code: "1"
+        format: table
+
+    # ── 6. Push (only if scan passed) ──
+    - name: Push to ACR
+      shell: bash
+      run: |
+        docker push ${{ steps.tag.outputs.image-tag }}
+        docker push ${{ inputs.acr-name }}.azurecr.io/${{ inputs.image-name }}:latest
