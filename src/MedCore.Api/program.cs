@@ -22,9 +22,10 @@ app.MapGet("/health", () => Results.Ok(new
 // ─── Root — friendly landing ───
 app.MapGet("/", () => Results.Ok(new
 {
-    message = "MedCore Patient Record System",
+    message = "MedCore Patient Record System 2",
     docs = "/health",
     environment = app.Environment.EnvironmentName
 }));
 
 app.Run();
+
