@@ -43,26 +43,55 @@ runs:
     # ── 1. Trivy Filesystem Scan ──
     # Scans source code + dependency lock files for known CVEs
     # Detects: NuGet (*.csproj), npm, pip, Go, Dockerfile issues
+    #
+    # WHY shell instead of trivy-action wrapper?
+    #   The trivy-action@0.28.0 wrapper has version mismatch with
+    #   newer Trivy binaries (v0.56+). Running directly gives full
+    #   control and avoids wrapper compatibility issues.
+    - name: "🔍 Trivy — Install Scanner"
+      shell: bash
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        trivy --version
+
     - name: "🔍 Trivy — Filesystem Scan"
-      uses: aquasecurity/trivy-action@0.28.0
-      with:
-        scan-type: fs
-        scan-ref: ${{ inputs.scan-path }}
-        severity: ${{ inputs.severity }}
-        exit-code: ${{ inputs.fail-on-findings == 'true' && '1' || '0' }}
-        ignore-unfixed: true
-        format: table
+      shell: bash
+      run: |
+        trivy fs ${{ inputs.scan-path }} \
+          --severity ${{ inputs.severity }} \
+          --ignore-unfixed \
+          --format table \
+          --exit-code ${{ inputs.fail-on-findings == 'true' && '1' || '0' }}
 
     # ── 2. OWASP Dependency Check ──
     # Deep scan of dependencies against NVD (National Vulnerability Database)
     # More thorough than Trivy for transitive dependency chains
-    - name: "🛡️ OWASP — Dependency Check"
-      uses: dependency-check/Dependency-Check_Action@main
-      with:
-        project: "MedCore"
-        path: ${{ inputs.scan-path }}
-        format: "HTML"
-      continue-on-error: true   # OWASP can be flaky with NVD API limits
+    #
+    # WHY shell instead of Dependency-Check_Action@main?
+    #   @main is unstable — output path changed, breaking report uploads.
+    #   Running via CLI gives explicit control over output directory.
+    - name: "🛡️ OWASP — Install Dependency Check"
+      shell: bash
+      run: |
+        DC_VERSION="11.1.1"
+        DC_DIR="$RUNNER_TEMP/dependency-check"
+        mkdir -p "$DC_DIR"
+        curl -sL "https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip" -o "$DC_DIR/dc.zip"
+        unzip -q "$DC_DIR/dc.zip" -d "$DC_DIR"
+        echo "$DC_DIR/dependency-check/bin" >> $GITHUB_PATH
+
+    - name: "🛡️ OWASP — Dependency Check Scan"
+      shell: bash
+      run: |
+        mkdir -p reports
+        dependency-check.sh \
+          --project "MedCore" \
+          --scan "${{ inputs.scan-path }}" \
+          --format HTML \
+          --out reports/ \
+          --disableAssembly \
+          --nvdApiDelay 6000 || true
+        # || true: OWASP can fail on NVD API rate limits — don't block pipeline
 
     - name: Upload OWASP Report
       if: always()
@@ -71,6 +100,7 @@ runs:
         name: owasp-report
         path: reports/
         retention-days: 7
+        if-no-files-found: warn
 
     # ── 3. SBOM Generation ──
     # Software Bill of Materials — required for compliance
