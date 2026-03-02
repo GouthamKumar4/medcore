@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────────────────────
 # APP CI — Validate application on Pull Request
-# ───────────────────────────────────────ss─ss──────────────────────
+# ───────────────────────────────────────ss─sss──────────────────────
 # TRIGGER: Pull request to main (src/ changes)
 # DOES:    Build → Test → Report
 # DOES NOT: Deploy anything (that's app-cd.yml)
@@ -60,5 +60,6 @@ jobs:
               repo: context.repo.repo,
               body
             });
+
 
 
