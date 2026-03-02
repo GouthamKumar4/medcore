@@ -176,6 +176,7 @@ jobs:
           severity: ${{ inputs.security-severity }}
           fail-on-findings: ${{ inputs.fail-on-security }}
           generate-sbom: "true"
+          nvd-api-key: ${{ secrets.NVD_API_KEY }}
 
   # ────────────────────────────────────────────────────────────
   # GATE 3: Code Quality (SonarCloud — multi-language)
