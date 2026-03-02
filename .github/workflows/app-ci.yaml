@@ -45,5 +45,5 @@ jobs:
       project-path: "src/MedCore.Api/MedCore.Api.csproj"
       scan-path: "src/"
       sonar-org: "gouthamkumar4"
-      sonar-project-key: "GouthamKumar4_simple-app"
+      sonar-project-key: "GouthamKumar4_medcore"
     secrets: inherit
