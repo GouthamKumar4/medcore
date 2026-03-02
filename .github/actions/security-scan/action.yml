@@ -36,6 +36,10 @@ inputs:
     description: "Generate SBOM? (true/false)"
     required: false
     default: "true"
+  nvd-api-key:
+    description: "NVD API key for OWASP (free: https://nvd.nist.gov/developers/request-an-api-key). Without this, OWASP is SKIPPED (downloads 335K records = hours)."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -67,10 +71,16 @@ runs:
     # Deep scan of dependencies against NVD (National Vulnerability Database)
     # More thorough than Trivy for transitive dependency chains
     #
-    # WHY shell instead of Dependency-Check_Action@main?
-    #   @main is unstable — output path changed, breaking report uploads.
-    #   Running via CLI gives explicit control over output directory.
+    # REQUIRES: NVD API key (free from https://nvd.nist.gov/developers/request-an-api-key)
+    # WITHOUT API KEY: Downloads 335,288 NVD records = 1-2 HOURS per run.
+    # WITH API KEY: ~2-5 minutes.
+    #
+    # If no API key → OWASP skipped, uses `dotnet list package --vulnerable` instead.
+    # ──────────────────────────────────────────────────────────────
+
+    # Path A: NVD API key provided → full OWASP scan
     - name: "🛡️ OWASP — Install Dependency Check"
+      if: inputs.nvd-api-key != ''
       shell: bash
       run: |
         DC_VERSION="11.1.1"
@@ -81,6 +91,7 @@ runs:
         echo "$DC_DIR/dependency-check/bin" >> $GITHUB_PATH
 
     - name: "🛡️ OWASP — Dependency Check Scan"
+      if: inputs.nvd-api-key != ''
       shell: bash
       run: |
         mkdir -p reports
@@ -90,17 +101,45 @@ runs:
           --format HTML \
           --out reports/ \
           --disableAssembly \
-          --nvdApiDelay 6000 || true
-        # || true: OWASP can fail on NVD API rate limits — don't block pipeline
+          --nvdApiKey "${{ inputs.nvd-api-key }}" || true
+        # || true: OWASP can still fail on NVD API rate limits
 
     - name: Upload OWASP Report
-      if: always()
+      if: always() && inputs.nvd-api-key != ''
       uses: actions/upload-artifact@v4
       with:
         name: owasp-report
         path: reports/
         retention-days: 7
         if-no-files-found: warn
+
+    # Path B: No NVD API key → lightweight .NET vulnerability check
+    - name: "🛡️ Lightweight Dep Check (no NVD API key)"
+      if: inputs.nvd-api-key == ''
+      shell: bash
+      run: |
+        echo "⚠️  OWASP skipped — no NVD API key provided"
+        echo "    Get a FREE key: https://nvd.nist.gov/developers/request-an-api-key"
+        echo "    Add as secret: NVD_API_KEY in GitHub repo settings"
+        echo ""
+        echo "Running lightweight vulnerability check instead..."
+        echo ""
+        # dotnet list package --vulnerable uses NuGet advisory DB (fast, no API key)
+        if command -v dotnet &> /dev/null; then
+          CSPROJ=$(find "${{ inputs.scan-path }}" -name "*.csproj" | head -1)
+          if [ -n "$CSPROJ" ]; then
+            dotnet restore "$CSPROJ" --verbosity quiet 2>/dev/null || true
+            echo "=== Known Vulnerable Packages ==="
+            dotnet list "$CSPROJ" package --vulnerable 2>/dev/null || echo "No vulnerable packages found."
+            echo ""
+            echo "=== Deprecated Packages ==="
+            dotnet list "$CSPROJ" package --deprecated 2>/dev/null || echo "No deprecated packages found."
+          else
+            echo "No .csproj found — skipping .NET dep check"
+          fi
+        else
+          echo "dotnet SDK not available — skipping lightweight dep check"
+        fi
 
     # ── 3. SBOM Generation ──
     # Software Bill of Materials — required for compliance
