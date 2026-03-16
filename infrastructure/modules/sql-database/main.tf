@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# MODULE: SQL Database
+# MODULE: Azure SQL Database
 # ──────────────────────────────────────────────────────────────
 # Creates: Azure SQL Server + Database + Firewall Rules
 # ──────────────────────────────────────────────────────────────
@@ -50,3 +50,4 @@ resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
   start_ip_address = "0.0.0.0"
   end_ip_address   = "0.0.0.0"
 }
+
